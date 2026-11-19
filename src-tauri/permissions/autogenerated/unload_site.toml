@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unload-site"
+description = "Enables the unload_site command without any pre-configured scope."
+commands.allow = ["unload_site"]
+
+[[permission]]
+identifier = "deny-unload-site"
+description = "Denies the unload_site command without any pre-configured scope."
+commands.deny = ["unload_site"]

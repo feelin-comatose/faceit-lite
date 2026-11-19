@@ -11,6 +11,7 @@
 <body>
   <header class="topbar">
     <span id="status" class="status"><i></i><span>FACEIT в трее</span></span>
+    <span id="session" class="session" title="Сегодня"></span>
     <button id="toggle-site" title="Показать/спрятать сайт FACEIT">Открыть FACEIT</button>
   </header>
   <div id="update-banner" class="update" hidden>
@@ -18,14 +19,21 @@
     <button id="update-btn" class="primary">Обновить</button>
   </div>
   <nav class="tabs">
-    <button data-tab="profile" class="active">Профиль</button>
+    <button data-tab="me" class="active">Я</button>
+    <button data-tab="profile">Профиль</button>
     <button data-tab="lobby">Лобби</button>
-    <button data-tab="settings">Настройки</button>
+    <button data-tab="friends">Друзья</button>
+    <button data-tab="settings" title="Настройки">⚙</button>
   </nav>
 
   <main>
+    <!-- Я: сессия, график ELO, итоги матча -->
+    <section id="tab-me" class="tab active">
+      <div id="me-out"><p class="muted center">Задай API-ключ и свой ник в настройках — тут появятся сессия, график ELO и итоги матчей.</p></div>
+    </section>
+
     <!-- ПРОФИЛЬ -->
-    <section id="tab-profile" class="tab active">
+    <section id="tab-profile" class="tab">
       <form id="profile-form" class="row">
         <input id="nick" placeholder="Ник на FACEIT" autocomplete="off" spellcheck="false" />
         <button type="submit" class="primary">Найти</button>
@@ -41,6 +49,15 @@
       </form>
       <p class="muted small">Зайди в комнату матча на faceit.com, и лобби подтянется само.</p>
       <div id="lobby-out"></div>
+    </section>
+
+    <!-- ДРУЗЬЯ -->
+    <section id="tab-friends" class="tab">
+      <form id="friend-form" class="row">
+        <input id="friend-nick" placeholder="Ник друга" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="primary">Добавить</button>
+      </form>
+      <div id="friends-out"></div>
     </section>
 
     <!-- НАСТРОЙКИ -->
@@ -94,6 +111,32 @@
           <span id="app-version" class="small muted"></span>
         </div>
 
+        <h3>Трекер</h3>
+        <label class="check"><input name="tracker_enabled" type="checkbox" /> Следить за своим ELO и матчами (вкладка «Я», итоги матча)</label>
+
+        <h3>OBS-оверлей</h3>
+        <label class="check"><input name="overlay_enabled" type="checkbox" /> Включить оверлей для OBS</label>
+        <label>Порт <input name="overlay_port" type="number" min="1024" max="65535" /></label>
+        <div class="row">
+          <code id="overlay-url" class="code"></code>
+          <button type="button" id="copy-overlay">Копировать</button>
+        </div>
+        <span class="hint">OBS → Источник → Браузер → вставь URL. Параметры: <code>?show=elo,today,last,graph&amp;scale=1.5&amp;align=right</code>. Свой стиль — overlay.css в папке настроек.</span>
+
+        <h3>Discord</h3>
+        <label>Application ID <input name="discord_client_id" spellcheck="false" placeholder="пусто — выключено" /></label>
+        <span class="hint">discord.com/developers → New Application, назови «FACEIT» (это имя будет видно в статусе) → скопируй Application ID. Discord должен быть запущен.</span>
+
+        <h3>Ресурсы</h3>
+        <div class="row">
+          <button type="button" id="measure">Замерить</button>
+          <span id="res-out" class="small muted"></span>
+        </div>
+        <div class="row">
+          <button type="button" id="unload-site">Выгрузить сайт из памяти</button>
+        </div>
+        <span class="hint">Выгруженный сайт не ест ничего, но и «матч найден» не поймает, пока не откроешь его снова.</span>
+
         <h3>Окна и хоткеи</h3>
         <label class="check"><input name="stats_always_on_top" type="checkbox" /> Статистика поверх всех окон</label>
         <label class="check"><input name="tray_mode" type="checkbox" /> Режим «сайт в трее»: главное окно — эта панель, сайт спит и всплывает на «матч найден»</label>
@@ -103,7 +146,7 @@
         <label>Показать/скрыть FACEIT <input name="hotkey_toggle_main" spellcheck="false" /></label>
         <label class="check"><input name="devtools" type="checkbox" /> DevTools (ПКМ → Inspect)</label>
         <label>Аргументы WebView2 <input name="webview_args" spellcheck="false" placeholder="--disable-gpu" /></label>
-        <p class="hint">Режим «сайт в трее», хоткеи, DevTools, стартовая страница и аргументы WebView2 применяются после перезапуска.</p>
+        <p class="hint">Оверлей, режим «сайт в трее», хоткеи, DevTools, стартовая страница и аргументы WebView2 применяются после перезапуска.</p>
 
         <div class="row sticky">
           <button type="submit" class="primary">Сохранить</button>

@@ -22,7 +22,7 @@ impl Faceit {
         }
     }
 
-    async fn get(&self, key: &str, path: &str, query: &[(&str, &str)]) -> Result<Value, String> {
+    pub async fn get(&self, key: &str, path: &str, query: &[(&str, &str)]) -> Result<Value, String> {
         let key = key.trim();
         if key.is_empty() {
             return Err("Нет API-ключа. Вставь его во вкладке «Настройки» (developers.faceit.com).".into());
@@ -61,7 +61,7 @@ impl Faceit {
 
     /// Ник в FACEIT чувствителен к регистру: сначала точный поиск,
     /// при 404 — через /search/players с совпадением без учёта регистра.
-    async fn find_player(&self, key: &str, nickname: &str) -> Result<Value, String> {
+    pub async fn find_player(&self, key: &str, nickname: &str) -> Result<Value, String> {
         let nick = nickname.trim();
         match self.get(key, "/players", &[("nickname", nick)]).await {
             Ok(p) => return Ok(p),
@@ -115,14 +115,55 @@ impl Faceit {
         let futs = ids.iter().map(|pid| async move {
             let p_path = format!("/players/{pid}");
             let s_path = format!("/players/{pid}/stats/cs2");
-            let (p, s) = futures::join!(self.get(key, &p_path, &[]), self.get(key, &s_path, &[]));
+            let r_path = format!("/players/{pid}/games/cs2/stats");
+            let (p, s, r) = futures::join!(
+                self.get(key, &p_path, &[]),
+                self.get(key, &s_path, &[]),
+                self.get(key, &r_path, &[("limit", "20")]),
+            );
             (
                 pid.clone(),
-                json!({ "player": p.unwrap_or(Value::Null), "stats": s.unwrap_or(Value::Null) }),
+                json!({
+                    "player": p.unwrap_or(Value::Null),
+                    "stats": s.unwrap_or(Value::Null),
+                    // свежая форма: последние 20 матчей
+                    "recent": r.unwrap_or(Value::Null),
+                }),
             )
         });
         let players: Map<String, Value> = join_all(futs).await.into_iter().collect();
         Ok(json!({ "match": m, "players": players }))
+    }
+}
+
+impl Faceit {
+    /// Друзья: ELO, уровень и последний матч каждого
+    pub async fn friends(&self, key: &str, nicks: &[String]) -> Vec<Value> {
+        let futs = nicks.iter().map(|nick| async move {
+            let p = match self.find_player(key, nick).await {
+                Ok(p) => p,
+                Err(e) => return json!({ "nickname": nick, "error": e }),
+            };
+            let id = p["player_id"].as_str().unwrap_or_default().to_string();
+            let hist = self
+                .get(key, &format!("/players/{id}/history"), &[("game", "cs2"), ("limit", "1")])
+                .await
+                .ok();
+            let last = hist.as_ref().and_then(|h| h["items"].get(0)).map(|m| {
+                json!({
+                    "finished_at": m["finished_at"].as_i64().map(|t| t * 1000),
+                    "win": crate::tracker::did_win(m, &id),
+                })
+            });
+            json!({
+                "nickname": p["nickname"],
+                "avatar": p["avatar"],
+                "elo": p["games"]["cs2"]["faceit_elo"],
+                "level": p["games"]["cs2"]["skill_level"],
+                "last": last,
+            })
+        });
+        join_all(futs).await
     }
 }
 

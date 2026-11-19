@@ -2,6 +2,8 @@
 
 mod api;
 mod config;
+mod overlay;
+mod tracker;
 
 use config::{Config, Paths};
 use serde_json::{json, Value};
@@ -86,10 +88,23 @@ fn site_visible(app: &AppHandle) -> bool {
 }
 
 fn notify_site_status(app: &AppHandle) {
-    let _ = app.emit_to("stats", "site-status", json!({ "kind": "visibility", "visible": site_visible(app) }));
+    let loaded = app.get_webview_window("main").is_some();
+    let _ = app.emit_to(
+        "stats",
+        "site-status",
+        json!({ "kind": "visibility", "visible": site_visible(app), "loaded": loaded }),
+    );
 }
 
 fn show_window(app: &AppHandle, label: &str) {
+    // сайт был выгружен — создаём заново
+    if label == "main" && app.get_webview_window("main").is_none() {
+        if let Err(e) = build_main(app, true) {
+            eprintln!("cannot rebuild main window: {e}");
+        }
+        notify_site_status(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window(label) {
         if label == "main" {
             set_site_active(app, true);
@@ -177,8 +192,61 @@ fn toggle_site(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
-fn get_site_visible(app: AppHandle) -> bool {
-    site_visible(&app)
+fn get_site_visible(app: AppHandle) -> Value {
+    json!({ "visible": site_visible(&app), "loaded": app.get_webview_window("main").is_some() })
+}
+
+/// Полностью выгрузить сайт из памяти. Алерт «матч найден» до открытия работать не будет.
+#[tauri::command]
+fn unload_site(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.destroy();
+    }
+    notify_site_status(&app);
+}
+
+#[tauri::command]
+fn get_tracker(tracker: State<tracker::Tracker>) -> tracker::Snapshot {
+    tracker.snapshot()
+}
+
+#[tauri::command]
+fn refresh_tracker(tracker: State<tracker::Tracker>) {
+    tracker.wake();
+}
+
+#[tauri::command]
+async fn get_friends(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let (key, friends) = {
+        let c = state.cfg.lock().unwrap();
+        (c.api_key.clone(), c.friends.clone())
+    };
+    Ok(state.api.friends(&key, &friends).await)
+}
+
+/// Сколько памяти занимает клиент вместе со всеми процессами WebView2
+#[tauri::command]
+fn get_resources() -> Value {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+    let Ok(mut sys) = System::new() else {
+        return json!({ "error": "не удалось прочитать список процессов" });
+    };
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let me = Pid::from_u32(std::process::id());
+    let mut tree = std::collections::HashSet::from([me]);
+    loop {
+        let before = tree.len();
+        for (pid, p) in sys.processes() {
+            if p.parent().is_some_and(|pp| tree.contains(&pp)) {
+                tree.insert(*pid);
+            }
+        }
+        if tree.len() == before {
+            break;
+        }
+    }
+    let bytes: u64 = tree.iter().filter_map(|p| sys.process(*p)).map(|p| p.memory()).sum();
+    json!({ "ram_mb": bytes / 1024 / 1024, "processes": tree.len() })
 }
 
 #[tauri::command]
@@ -186,6 +254,7 @@ fn save_config(app: AppHandle, state: State<AppState>, config: Config) -> Result
     state.paths.save(&config).map_err(|e| e.to_string())?;
     *state.cfg.lock().unwrap() = config;
     apply_theme(&app);
+    app.state::<tracker::Tracker>().wake();
     Ok(())
 }
 
@@ -298,6 +367,7 @@ fn page_event(app: AppHandle, kind: String, data: Option<String>) -> Value {
         }
         "room" => {
             if let Some(id) = data.filter(|d| api::valid_match_id(d)) {
+                app.state::<tracker::Tracker>().set_room(id.clone());
                 let _ = app.emit_to("stats", "room-detected", id.clone());
                 let _ = app.emit_to("stats", "site-status", json!({ "kind": "room", "id": id }));
                 if cfg(&app).auto_open_lobby {
@@ -314,7 +384,7 @@ fn page_event(app: AppHandle, kind: String, data: Option<String>) -> Value {
 
 // ───────────── setup ─────────────
 
-fn build_windows(app: &AppHandle) -> tauri::Result<()> {
+fn build_main(app: &AppHandle, visible: bool) -> tauri::Result<()> {
     let c = cfg(app);
 
     let start: tauri::Url = c
@@ -329,7 +399,7 @@ fn build_windows(app: &AppHandle) -> tauri::Result<()> {
         .title("FACEIT Lite")
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
-        .visible(!c.start_hidden && !c.tray_mode)
+        .visible(visible)
         .devtools(c.devtools)
         .initialization_script(&inject_script(app));
     #[cfg(target_os = "windows")]
@@ -338,9 +408,15 @@ fn build_windows(app: &AppHandle) -> tauri::Result<()> {
     }
     let main = main.build()?;
     let _ = main.set_zoom(c.zoom.clamp(0.5, 2.0));
-    if c.start_hidden || c.tray_mode {
+    if !visible {
         set_site_active(app, false);
     }
+    Ok(())
+}
+
+fn build_windows(app: &AppHandle) -> tauri::Result<()> {
+    let c = cfg(app);
+    build_main(app, !c.start_hidden && !c.tray_mode)?;
 
     WebviewWindowBuilder::new(app, "stats", WebviewUrl::App("index.html".into()))
         .title("FACEIT Lite — статистика")
@@ -453,8 +529,11 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let paths = Paths::new(app.path().app_config_dir()?);
+            let dir = app.path().app_config_dir()?;
+            let paths = Paths::new(dir.clone());
             let cfg = paths.load();
+            app.manage(tracker::Tracker::new(dir));
+            let (overlay_on, overlay_port) = (cfg.overlay_enabled, cfg.overlay_port);
             app.manage(AppState {
                 cfg: Mutex::new(cfg),
                 paths,
@@ -465,6 +544,10 @@ fn main() {
             build_windows(&handle)?;
             build_tray(&handle)?;
             register_hotkeys(&handle);
+            tracker::start(handle.clone());
+            if overlay_on {
+                overlay::start(handle.clone(), overlay_port);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -490,7 +573,12 @@ fn main() {
             toggle_site,
             get_site_visible,
             check_update,
-            install_update
+            install_update,
+            unload_site,
+            get_tracker,
+            refresh_tracker,
+            get_friends,
+            get_resources
         ])
         .run(tauri::generate_context!())
         .expect("error while running FACEIT Lite");

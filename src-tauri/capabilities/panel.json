@@ -14,6 +14,11 @@
     "allow-toggle-site",
     "allow-get-site-visible",
     "allow-check-update",
-    "allow-install-update"
+    "allow-install-update",
+    "allow-unload-site",
+    "allow-get-tracker",
+    "allow-refresh-tracker",
+    "allow-get-friends",
+    "allow-get-resources"
   ]
 }

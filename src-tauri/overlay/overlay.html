@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+  OBS-оверлей FACEIT Lite. Добавь в OBS: Источник → Браузер → URL http://127.0.0.1:4777/
+  Параметры URL:
+    ?show=elo,today,last,graph   — какие блоки показывать (по умолчанию все)
+    &scale=1.5                   — масштаб
+    &align=right                 — выравнивание (left / right)
+    &last=10                     — сколько последних матчей в полоске
+  Свой стиль: overlay.css в папке настроек (трей → «Папка настроек»).
+-->
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>FACEIT Lite overlay</title>
+  <style id="vars"></style>
+  <style>
+    html, body { margin: 0; background: transparent; overflow: hidden; }
+    body { font: 700 16px/1.2 var(--font); color: var(--text); padding: 8px; }
+    .wrap {
+      display: inline-flex; flex-direction: column; gap: 6px; padding: 10px 14px;
+      background: color-mix(in srgb, var(--bg) 82%, transparent); border-radius: var(--radius);
+      transform-origin: top left;
+    }
+    body.right { text-align: right; }
+    body.right .wrap { transform-origin: top right; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .lvl { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 3px solid currentColor; font-weight: 900; }
+    .lvl-1 { color: #eee; } .lvl-2, .lvl-3 { color: #1ce400; } .lvl-4, .lvl-5, .lvl-6, .lvl-7 { color: #ffc800; }
+    .lvl-8, .lvl-9 { color: #ff6309; } .lvl-10 { color: #fe1f00; }
+    .elo { font-size: 26px; font-weight: 900; }
+    .muted { color: var(--muted); font-weight: 600; font-size: 13px; }
+    .good { color: var(--good); } .bad { color: var(--bad); }
+    .last { display: flex; gap: 3px; }
+    .last i { width: 16px; height: 16px; border-radius: 3px; font: 900 10px/16px var(--font); text-align: center; font-style: normal; color: #000; }
+    .last .w { background: var(--good); } .last .l { background: var(--bad); }
+    svg { display: block; }
+    [hidden] { display: none !important; }
+  </style>
+  <link rel="stylesheet" href="/user.css" />
+</head>
+<body>
+  <div class="wrap" id="wrap" hidden>
+    <div class="row" data-block="elo"><span id="lvl" class="lvl"></span><span id="elo" class="elo"></span><span id="nick" class="muted"></span></div>
+    <div class="row" data-block="today"><span class="muted">Сегодня</span><span id="wl"></span><span id="delta"></span></div>
+    <div class="last" id="last" data-block="last"></div>
+    <div data-block="graph"><svg id="graph" width="220" height="40"></svg></div>
+  </div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const show = (q.get("show") || "elo,today,last,graph").split(",");
+    const lastN = +(q.get("last") || 10);
+    if (q.get("align") === "right") document.body.classList.add("right");
+    document.getElementById("wrap").style.transform = `scale(${+(q.get("scale") || 1)})`;
+    document.querySelectorAll("[data-block]").forEach((el) => (el.hidden = !show.includes(el.dataset.block)));
+
+    function theme(t) {
+      document.getElementById("vars").textContent = `:root{--bg:${t.bg};--text:${t.text};--muted:${t.muted};--good:${t.good};--bad:${t.bad};--accent:${t.accent};--radius:${t.radius}px;--font:${t.font}}`;
+    }
+
+    function graph(log) {
+      const svg = document.getElementById("graph");
+      const pts = log.slice(-40);
+      if (pts.length < 2) return (svg.innerHTML = "");
+      const W = 220, H = 40, ys = pts.map((p) => p.elo);
+      const min = Math.min(...ys), max = Math.max(...ys), span = max - min || 1;
+      const d = pts.map((p, i) => `${i ? "L" : "M"}${((i / (pts.length - 1)) * (W - 4) + 2).toFixed(1)},${(H - 3 - ((p.elo - min) / span) * (H - 6)).toFixed(1)}`).join("");
+      svg.innerHTML = `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
+
+    async function refresh() {
+      try {
+        const { snap: s, theme: t } = await (await fetch("/state", { cache: "no-store" })).json();
+        theme(t);
+        if (!s.ok && s.elo == null) return;
+        document.getElementById("wrap").hidden = false;
+        const lvl = document.getElementById("lvl");
+        lvl.className = "lvl lvl-" + (s.level || 1);
+        lvl.textContent = s.level ?? "?";
+        document.getElementById("elo").textContent = s.elo ?? "—";
+        document.getElementById("nick").textContent = s.nickname;
+        document.getElementById("wl").innerHTML = `<span class="good">${s.today.wins}W</span> <span class="bad">${s.today.losses}L</span>`;
+        const d = s.today.delta;
+        const de = document.getElementById("delta");
+        de.textContent = (d > 0 ? "+" : "") + d;
+        de.className = d > 0 ? "good" : d < 0 ? "bad" : "muted";
+        document.getElementById("last").innerHTML = s.recent.slice(0, lastN).reverse()
+          .map((m) => (m.win === true ? '<i class="w">W</i>' : m.win === false ? '<i class="l">L</i>' : "")).join("");
+        graph(s.log);
+      } catch {}
+    }
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

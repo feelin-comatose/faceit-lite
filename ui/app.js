@@ -39,6 +39,7 @@ async function loadConfig() {
   CONFIG = config;
   VERSION = version || "?";
   $("#app-version").textContent = `Версия ${VERSION}`;
+  $("#overlay-url").textContent = overlayUrl();
   applyTheme(config, panel_css);
   fillSettings(config);
   if (!$("#nick").value && config.nickname) $("#nick").value = config.nickname;
@@ -212,6 +213,20 @@ async function loadLobby(id) {
   }
 }
 
+/** Свежая форма по последним матчам из /games/cs2/stats */
+function recentForm(recent) {
+  const items = (recent?.items || []).map((it) => it.stats || {});
+  const kds = items.map((s) => num(pick(s, "K/D Ratio"))).filter((x) => x != null);
+  const adrs = items.map((s) => num(pick(s, "ADR"))).filter((x) => x != null);
+  const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return {
+    n: items.length,
+    w: items.filter((s) => String(pick(s, "Result")) === "1").length,
+    kd: avg(kds),
+    adr: avg(adrs),
+  };
+}
+
 function playerMaps(stats) {
   const res = {};
   for (const s of stats?.segments || []) {
@@ -232,7 +247,13 @@ function renderLobby(out, { match, players }) {
       const full = players[p.player_id] || {};
       const cs = full.player?.games?.cs2 || {};
       const life = full.stats?.lifetime || {};
+      const form = recentForm(full.recent);
+      const matches = num(pick(life, "Matches"));
+      // «подозрительный»: мало матчей, но играет сильно
+      const smurf = matches != null && matches < 150 && form.n >= 5 && ((form.kd ?? 0) >= 1.4 || (form.adr ?? 0) >= 95);
       return {
+        form,
+        smurf,
         nick: p.nickname,
         lvl: cs.skill_level || p.game_skill_level,
         elo: cs.faceit_elo ?? null,
@@ -294,8 +315,9 @@ function renderLobby(out, { match, players }) {
       ${t.roster.map((p) => `
         <div class="pl">${lvlBadge(p.lvl, true)}
           <div style="flex:1;min-width:0">
-            <div class="n ${p.me ? "me" : ""}">${esc(p.nick)}</div>
-            <div class="s">${p.elo ?? "—"} elo · K/D ${fmt(p.kd)} · ${fmt(p.wr, 0)}% · ${p.matches ?? "—"} м.</div>
+            <div class="n ${p.me ? "me" : ""}">${esc(p.nick)} ${p.smurf ? '<span class="tag smurf" title="Мало матчей, но сильная игра">СМУРФ?</span>' : ""}</div>
+            <div class="s">${p.elo ?? "—"} elo · ${p.matches ?? "—"} м. за всё время</div>
+            <div class="s">${p.form.n ? `форма (${p.form.n}): <b class="${p.form.kd >= 1 ? "good" : "bad"}">K/D ${fmt(p.form.kd)}</b> · ADR ${fmt(p.form.adr, 0)} · ${p.form.w}W ${p.form.n - p.form.w}L` : `K/D ${fmt(p.kd)} · ${fmt(p.wr, 0)}% за всё время`}</div>
           </div>
         </div>`).join("")}
     </div>`;
@@ -372,11 +394,14 @@ $("#reload").addEventListener("click", () => invoke("reload_theme"));
 // ───────── статус сайта ─────────
 const time = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 let siteVisible = false;
+let siteLoaded = true;
 let lastEvent = null; // { cls, text } — последний значимый статус (матч / комната)
 
 function renderStatus() {
   const st = $("#status");
-  const ev = lastEvent || (siteVisible
+  const ev = lastEvent || (!siteLoaded
+    ? { cls: "", text: "FACEIT выгружен · алерта о матче нет" }
+    : siteVisible
     ? { cls: "open", text: "FACEIT открыт" }
     : { cls: "", text: "FACEIT в трее · спит" });
   st.className = "status " + ev.cls;
@@ -388,11 +413,15 @@ function renderStatus() {
 
 $("#toggle-site").addEventListener("click", async () => {
   siteVisible = await invoke("toggle_site");
+  siteLoaded = true;
   renderStatus();
 });
 
 listen("site-status", ({ payload: p }) => {
-  if (p.kind === "visibility") siteVisible = p.visible;
+  if (p.kind === "visibility") {
+    siteVisible = p.visible;
+    if (p.loaded != null) siteLoaded = p.loaded;
+  }
   else if (p.kind === "match_found") lastEvent = { cls: "found", text: `МАТЧ НАЙДЕН · ${time()} · жми Accept` };
   else if (p.kind === "room") lastEvent = { cls: "room", text: `В комнате матча · ${time()}` };
   renderStatus();
@@ -408,7 +437,11 @@ setInterval(() => {
   }
 }, 60000);
 
-invoke("get_site_visible").then((v) => { siteVisible = v; renderStatus(); });
+invoke("get_site_visible").then((v) => {
+  siteVisible = v.visible;
+  siteLoaded = v.loaded;
+  renderStatus();
+});
 
 // ───────── обновления ─────────
 async function checkUpdate({ notify = false, manual = false } = {}) {
@@ -452,6 +485,232 @@ listen("check-update", () => {
 });
 $("#check-update").addEventListener("click", () => checkUpdate({ manual: true }));
 
+// ───────── вкладка «Я» ─────────
+let SNAP = null;
+let graphRange = localStorageGet("fl-range") || "week";
+
+function localStorageGet(k) {
+  try { return localStorage.getItem(k); } catch { return null; }
+}
+function localStorageSet(k, v) {
+  try { localStorage.setItem(k, v); } catch {}
+}
+
+const signed = (d) => (d > 0 ? `+${d}` : `${d}`);
+const dCls = (d) => (d > 0 ? "good" : d < 0 ? "bad" : "muted");
+
+function renderSession(s) {
+  const el = $("#session");
+  if (!s?.ok && s?.elo == null) return (el.innerHTML = "");
+  const t = s.today;
+  el.innerHTML = t.wins + t.losses
+    ? `<span class="good">${t.wins}W</span> <span class="bad">${t.losses}L</span> <span class="${dCls(t.delta)}">${signed(t.delta)}</span>`
+    : `<span class="muted">${s.elo ?? ""}</span>`;
+}
+
+function eloGraph(log, range) {
+  const now = Date.now();
+  const from = range === "today" ? new Date().setHours(0, 0, 0, 0) : range === "week" ? now - 7 * 864e5 : 0;
+  let pts = log.filter((p) => p.t >= from);
+  // точка «до начала периода», чтобы линия не начиналась с пустоты
+  const before = [...log].reverse().find((p) => p.t < from);
+  if (before) pts = [{ ...before, t: from }, ...pts];
+  if (pts.length && pts[pts.length - 1].t < now) pts = [...pts, { ...pts[pts.length - 1], t: now }];
+  if (pts.length < 2) return `<p class="muted small center">ELO копится с момента установки. Сыграй пару матчей — тут будет график.</p>`;
+
+  const W = 440, H = 120, P = 6;
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
+  const ys = pts.map((p) => p.elo);
+  const min = Math.min(...ys), max = Math.max(...ys), span = max - min || 1;
+  const x = (t) => P + ((t - t0) / (t1 - t0 || 1)) * (W - 2 * P);
+  const y = (e) => H - P - ((e - min) / span) * (H - 2 * P);
+  // ступеньки: ELO меняется скачком после матча
+  let d = `M${x(pts[0].t).toFixed(1)},${y(pts[0].elo).toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${x(pts[i].t).toFixed(1)}V${y(pts[i].elo).toFixed(1)}`;
+  // уровни 10 лвл/границы, попадающие в диапазон
+  const marks = LEVELS.slice(2).filter((l) => l > min && l < max)
+    .map((l) => `<line x1="0" x2="${W}" y1="${y(l)}" y2="${y(l)}" stroke="var(--line)" stroke-dasharray="3 4"/>`).join("");
+  const change = pts[pts.length - 1].elo - pts[0].elo;
+  return `
+    <div class="graph-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${marks}
+      <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    </svg></div>
+    <div class="graph-meta"><span>мин ${min} · макс ${max}</span><span class="${dCls(change)}">${signed(change)} за период</span></div>`;
+}
+
+function lastMatchCard(m) {
+  if (!m) return "";
+  const delta = m.elo_delta == null ? '<span class="muted">ELO обновляется…</span>' : `<b class="${dCls(m.elo_delta)}">${signed(m.elo_delta)} ELO</b>`;
+  return `
+    <div class="card last-match ${m.win ? "win" : "loss"}" id="last-match">
+      <h4>Последний матч</h4>
+      <div class="head">
+        <b class="${m.win ? "good" : "bad"}">${m.win ? "Победа" : "Поражение"} · ${esc(m.map)} ${esc(m.score || "")}</b>
+        ${delta}
+      </div>
+      <div class="kpis">
+        <div class="kpi"><b>${m.kills ?? "—"}/${m.deaths ?? "—"}/${m.assists ?? "—"}</b><span>K/D/A</span></div>
+        <div class="kpi"><b class="${m.kd >= 1 ? "good" : "bad"}">${fmt(m.kd)}</b><span>K/D</span></div>
+        <div class="kpi"><b>${fmt(m.adr, 0)}</b><span>ADR</span></div>
+        <div class="kpi"><b>#${m.rank}<span class="muted small">/${m.team_size}</span></b><span>в команде</span></div>
+      </div>
+      <div class="small muted" style="margin-top:6px">HS ${fmt(m.hs, 0)}% · MVP ${m.mvps ?? 0}</div>
+    </div>`;
+}
+
+function renderMe(s) {
+  SNAP = s;
+  renderSession(s);
+  const out = $("#me-out");
+  if (!s) return;
+  if (!s.ok && s.elo == null) {
+    if (s.error) error(out, s.error);
+    return;
+  }
+  const prog = levelProgress(s.elo, s.level);
+  const t = s.today;
+  const results = s.recent.slice(0, 15).reverse()
+    .map((m) => (m.win === true ? '<i class="w">W</i>' : m.win === false ? '<i class="l">L</i>' : "")).join("");
+  const room = s.room ? `<div class="small" style="margin-top:6px;color:var(--accent)">● В матче${s.room.map ? ` · ${esc(s.room.map)}` : ""}</div>` : "";
+
+  out.innerHTML = `
+    <div class="card">
+      <div class="big">
+        <img src="${esc(s.avatar)}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'">
+        ${lvlBadge(s.level)}<span class="elo">${s.elo ?? "—"}</span>
+        <div class="today">
+          <div class="small muted">Сегодня</div>
+          <b><span class="good">${t.wins}W</span> <span class="bad">${t.losses}L</span></b>
+          <div class="${dCls(t.delta)}" style="font-weight:700">${signed(t.delta)} ELO</div>
+        </div>
+      </div>
+      ${prog ? `<div class="progress"><i style="width:${prog.pct}%"></i></div><div class="small muted" style="margin-top:3px">+${prog.need} до ${s.level + 1} лвл</div>` : ""}
+      ${results ? `<div class="streak">${results}</div>` : ""}
+      ${room}
+    </div>
+
+    ${lastMatchCard(s.last_match)}
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <h4 style="margin:0">ELO</h4>
+        <div class="ranges">
+          ${[["today", "День"], ["week", "Неделя"], ["all", "Всё"]].map(([k, l]) => `<button data-range="${k}" class="${graphRange === k ? "on" : ""}">${l}</button>`).join("")}
+        </div>
+      </div>
+      ${eloGraph(s.log || [], graphRange)}
+    </div>
+    <p class="small muted center" style="padding:4px 0">Обновлено ${new Date(s.updated_at).toLocaleTimeString("ru-RU")} · <a href="#" id="me-refresh" style="color:var(--accent)">обновить</a></p>`;
+
+  $$("[data-range]", out).forEach((b) => b.addEventListener("click", () => {
+    graphRange = b.dataset.range;
+    localStorageSet("fl-range", graphRange);
+    renderMe(SNAP);
+  }));
+  $("#me-refresh", out)?.addEventListener("click", (e) => {
+    e.preventDefault();
+    invoke("refresh_tracker");
+  });
+}
+
+listen("tracker", ({ payload }) => renderMe(payload));
+listen("match-finished", () => {
+  showTab("me");
+  setTimeout(() => $("#last-match")?.classList.add("flash"), 50);
+});
+invoke("get_tracker").then((s) => s && (s.ok || s.elo != null) && renderMe(s));
+
+// ───────── друзья ─────────
+async function loadFriends() {
+  const out = $("#friends-out");
+  if (!(CONFIG.friends || []).length) {
+    out.innerHTML = '<p class="muted center">Добавь ники друзей — тут будут их ELO и последний матч.</p>';
+    return;
+  }
+  loading(out);
+  try {
+    const list = await invoke("get_friends");
+    list.sort((a, b) => (b.elo ?? -1) - (a.elo ?? -1));
+    const ago = (t) => {
+      if (!t) return "";
+      const m = Math.round((Date.now() - t) / 60000);
+      return m < 60 ? `${m} мин назад` : m < 1440 ? `${Math.round(m / 60)} ч назад` : `${Math.round(m / 1440)} д назад`;
+    };
+    out.innerHTML = `<div class="card">${list.map((f) => `
+      <div class="friend">
+        <img src="${esc(f.avatar || "")}" alt="" onerror="this.style.visibility='hidden'">
+        ${f.error ? "" : lvlBadge(f.level, true)}
+        <div class="n">
+          <a href="#" data-open="${esc(f.nickname)}" style="color:inherit;text-decoration:none">${esc(f.nickname)}</a>
+          <div class="small muted">${f.error ? esc(f.error) : f.last ? `${f.last.win === true ? '<span class="good">W</span>' : f.last.win === false ? '<span class="bad">L</span>' : "—"} · ${ago(f.last.finished_at)}` : "нет матчей"}</div>
+        </div>
+        <b>${f.elo ?? ""}</b>
+        <button class="x" data-remove="${esc(f.nickname)}" title="Убрать">✕</button>
+      </div>`).join("")}</div>
+      <p class="small muted">Онлайн-статус «сейчас в матче» FACEIT в открытом API не отдаёт — показываю время последнего матча.</p>`;
+    $$("[data-remove]", out).forEach((b) => b.addEventListener("click", () => saveFriends(
+      CONFIG.friends.filter((n) => n.toLowerCase() !== b.dataset.remove.toLowerCase())
+    )));
+    $$("[data-open]", out).forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      $("#nick").value = a.dataset.open;
+      showTab("profile");
+      loadProfile(a.dataset.open);
+    }));
+  } catch (e) {
+    error(out, e);
+  }
+}
+
+async function saveFriends(friends) {
+  const cfg = structuredClone(CONFIG);
+  cfg.friends = friends;
+  await invoke("save_config", { config: cfg });
+  CONFIG = cfg;
+  loadFriends();
+}
+
+$("#friend-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const nick = $("#friend-nick").value.trim();
+  if (!nick) return;
+  $("#friend-nick").value = "";
+  const list = CONFIG.friends || [];
+  if (!list.some((n) => n.toLowerCase() === nick.toLowerCase())) saveFriends([...list, nick]);
+});
+
+let friendsLoaded = false;
+$$('.tabs button[data-tab="friends"]').forEach((b) => b.addEventListener("click", () => {
+  if (!friendsLoaded) {
+    friendsLoaded = true;
+    loadFriends();
+  }
+}));
+
+// ───────── ресурсы, оверлей ─────────
+$("#measure").addEventListener("click", async () => {
+  const r = await invoke("get_resources");
+  $("#res-out").textContent = r.error
+    ? r.error
+    : `Клиент + WebView2: ${r.ram_mb} МБ, процессов: ${r.processes}${siteLoaded ? "" : " (сайт выгружен)"}`;
+});
+$("#unload-site").addEventListener("click", async () => {
+  await invoke("unload_site");
+  siteLoaded = false;
+  siteVisible = false;
+  renderStatus();
+  setTimeout(() => $("#measure").click(), 1500);
+});
+function overlayUrl() {
+  return `http://127.0.0.1:${CONFIG.overlay_port || 4777}/`;
+}
+$("#copy-overlay").addEventListener("click", () => {
+  navigator.clipboard?.writeText(overlayUrl());
+  $("#copy-overlay").textContent = "Скопировано";
+  setTimeout(() => ($("#copy-overlay").textContent = "Копировать"), 1500);
+});
+
 // ───────── события ─────────
 listen("config-changed", () => loadConfig());
 listen("room-detected", (e) => {
@@ -462,6 +721,10 @@ listen("room-detected", (e) => {
 
 loadConfig().then((cfg) => {
   if (cfg.auto_update) setTimeout(() => checkUpdate({ notify: true }), 3000);
+  if (cfg.api_key && cfg.nickname && cfg.tracker_enabled) return; // стартуем на вкладке «Я»
   if (!cfg.api_key) showTab("settings");
-  else if (cfg.nickname) loadProfile(cfg.nickname);
+  else if (cfg.nickname) {
+    showTab("profile");
+    loadProfile(cfg.nickname);
+  }
 });

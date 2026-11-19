@@ -68,6 +68,15 @@ pub struct Config {
     pub tray_mode: bool,
     /// Проверять обновления при запуске
     pub auto_update: bool,
+    /// Фоновый трекер своего аккаунта (ELO-лог, сессия, итоги матча)
+    pub tracker_enabled: bool,
+    /// Ники друзей для вкладки «Друзья»
+    pub friends: Vec<String>,
+    /// OBS-оверлей на http://127.0.0.1:<overlay_port>/
+    pub overlay_enabled: bool,
+    pub overlay_port: u16,
+    /// Application ID из discord.com/developers (пусто = статус в Discord выключен)
+    pub discord_client_id: String,
     pub start_hidden: bool,
     pub hotkey_toggle_stats: String,
     pub hotkey_toggle_main: String,
@@ -96,6 +105,11 @@ impl Default for Config {
             close_to_tray: true,
             tray_mode: true,
             auto_update: true,
+            tracker_enabled: true,
+            friends: vec![],
+            overlay_enabled: false,
+            overlay_port: 4777,
+            discord_client_id: String::new(),
             start_hidden: false,
             hotkey_toggle_stats: "CommandOrControl+Shift+F".into(),
             hotkey_toggle_main: "CommandOrControl+Shift+G".into(),
@@ -142,6 +156,15 @@ const PANEL_CSS_TEMPLATE: &str = r#"/*
 */
 "#;
 
+const OVERLAY_CSS_TEMPLATE: &str = r#"/*
+  overlay.css — стиль OBS-оверлея (http://127.0.0.1:4777/).
+  Классы: .wrap, .lvl, .elo, .last i.w / .last i.l, svg path ...
+  Пример:
+  .wrap { background: transparent; }
+  .elo  { font-size: 40px; text-shadow: 0 2px 6px #000; }
+*/
+"#;
+
 pub struct Paths {
     pub dir: PathBuf,
 }
@@ -166,6 +189,7 @@ impl Paths {
         for (path, tpl) in [
             (self.faceit_css_file(), FACEIT_CSS_TEMPLATE),
             (self.panel_css_file(), PANEL_CSS_TEMPLATE),
+            (self.dir.join("overlay.css"), OVERLAY_CSS_TEMPLATE),
         ] {
             if !path.exists() {
                 let _ = fs::write(path, tpl);
@@ -198,6 +222,10 @@ impl Paths {
 
     pub fn faceit_css(&self) -> String {
         fs::read_to_string(self.faceit_css_file()).unwrap_or_default()
+    }
+
+    pub fn overlay_css(&self) -> String {
+        fs::read_to_string(self.dir.join("overlay.css")).unwrap_or_default()
     }
 
     pub fn panel_css(&self) -> String {

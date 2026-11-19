@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-tracker"
+description = "Enables the get_tracker command without any pre-configured scope."
+commands.allow = ["get_tracker"]
+
+[[permission]]
+identifier = "deny-get-tracker"
+description = "Denies the get_tracker command without any pre-configured scope."
+commands.deny = ["get_tracker"]

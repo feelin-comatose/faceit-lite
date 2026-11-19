@@ -12,6 +12,11 @@ fn main() {
             "get_site_visible",
             "check_update",
             "install_update",
+            "unload_site",
+            "get_tracker",
+            "refresh_tracker",
+            "get_friends",
+            "get_resources",
         ]),
     ))
     .expect("failed to run tauri-build");

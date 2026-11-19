@@ -1,6 +1,6 @@
 [package]
 name = "faceit-lite"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "Lightweight, customizable FACEIT desktop client"
 
@@ -16,6 +16,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 futures = "0.3"
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+discord-rich-presence = "1"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 
 # Маленький и быстрый release-бинарник
 [profile.release]
