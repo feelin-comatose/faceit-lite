@@ -36,20 +36,51 @@ impl Faceit {
             .await
             .map_err(|e| format!("Сеть: {e}"))?;
         let status = resp.status().as_u16();
-        match status {
-            200..=299 => resp.json().await.map_err(|e| format!("Кривой ответ API: {e}")),
-            401 | 403 => Err("API-ключ не подошёл (401/403). Нужен Server-side ключ.".into()),
-            404 => Err("Не найдено (404). Проверь ник / ID матча.".into()),
-            429 => Err("FACEIT режет запросы (429). Подожди немного.".into()),
-            _ => Err(format!("FACEIT API ответил HTTP {status}")),
+        if (200..300).contains(&status) {
+            return resp.json().await.map_err(|e| format!("Кривой ответ API: {e}"));
         }
+        // FACEIT кладёт причину в {"errors":[{"message":"..."}]} — показываем её
+        let body = resp.text().await.unwrap_or_default();
+        let detail = serde_json::from_str::<Value>(&body)
+            .ok()
+            .and_then(|v| v["errors"][0]["message"].as_str().map(String::from))
+            .map(|m| format!(" — {m}"))
+            .unwrap_or_default();
+        Err(match status {
+            401 | 403 => format!("API-ключ не подошёл ({status}). Нужен Server-side ключ.{detail}"),
+            404 => format!("Не найдено (404). Проверь ник / ID матча.{detail}"),
+            429 => "FACEIT режет запросы (429). Подожди немного.".into(),
+            _ => format!("FACEIT API ответил HTTP {status}{detail}"),
+        })
+    }
+
+    /// Ник в FACEIT чувствителен к регистру: сначала точный поиск,
+    /// при 404 — через /search/players с совпадением без учёта регистра.
+    async fn find_player(&self, key: &str, nickname: &str) -> Result<Value, String> {
+        let nick = nickname.trim();
+        match self.get(key, "/players", &[("nickname", nick)]).await {
+            Ok(p) => return Ok(p),
+            Err(e) if !e.starts_with("Не найдено") => return Err(e),
+            Err(_) => {}
+        }
+        let found = self
+            .get(key, "/search/players", &[("nickname", nick), ("game", "cs2"), ("limit", "20")])
+            .await?;
+        let id = found["items"]
+            .as_array()
+            .and_then(|items| {
+                items.iter().find(|p| {
+                    p["nickname"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(nick))
+                })
+            })
+            .and_then(|p| p["player_id"].as_str().map(String::from))
+            .ok_or_else(|| format!("Игрок «{nick}» не найден на FACEIT"))?;
+        self.get(key, &format!("/players/{id}"), &[]).await
     }
 
     /// Профиль + общая статистика + последние матчи
     pub async fn player_bundle(&self, key: &str, nickname: &str) -> Result<Value, String> {
-        let player = self
-            .get(key, "/players", &[("nickname", nickname.trim()), ("game", "cs2")])
-            .await?;
+        let player = self.find_player(key, nickname).await?;
         let id = player["player_id"]
             .as_str()
             .ok_or("В ответе нет player_id")?
