@@ -13,6 +13,10 @@
     <span id="status" class="status"><i></i><span>FACEIT в трее</span></span>
     <button id="toggle-site" title="Показать/спрятать сайт FACEIT">Открыть FACEIT</button>
   </header>
+  <div id="update-banner" class="update" hidden>
+    <span id="update-text"></span>
+    <button id="update-btn" class="primary">Обновить</button>
+  </div>
   <nav class="tabs">
     <button data-tab="profile" class="active">Профиль</button>
     <button data-tab="lobby">Лобби</button>
@@ -79,6 +83,13 @@
         <label class="check"><input name="sound_on_match" type="checkbox" /> Звук</label>
         <label>Текст кнопки (RegExp) <input name="match_found_regex" spellcheck="false" /></label>
         <label class="check"><input name="auto_open_lobby" type="checkbox" /> Открывать разбор лобби при входе в комнату</label>
+
+        <h3>Обновления</h3>
+        <label class="check"><input name="auto_update" type="checkbox" /> Проверять обновления при запуске</label>
+        <div class="row">
+          <button type="button" id="check-update">Проверить сейчас</button>
+          <span id="update-msg" class="small muted"></span>
+        </div>
 
         <h3>Окна и хоткеи</h3>
         <label class="check"><input name="stats_always_on_top" type="checkbox" /> Статистика поверх всех окон</label>

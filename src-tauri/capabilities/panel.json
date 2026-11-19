@@ -12,6 +12,8 @@
     "allow-get-player",
     "allow-get-match",
     "allow-toggle-site",
-    "allow-get-site-visible"
+    "allow-get-site-visible",
+    "allow-check-update",
+    "allow-install-update"
   ]
 }

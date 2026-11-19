@@ -14,6 +14,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 const INJECT_JS: &str = include_str!("../inject/inject.js");
 
@@ -23,6 +24,9 @@ struct AppState {
     api: api::Faceit,
     hotkeys: Mutex<Hotkeys>,
 }
+
+/// Найденное, но ещё не установленное обновление
+struct PendingUpdate(Mutex<Option<Update>>);
 
 #[derive(Default)]
 struct Hotkeys {
@@ -224,6 +228,64 @@ async fn get_match(state: State<'_, AppState>, match_id: String) -> Result<Value
     state.api.match_bundle(&key, &id).await
 }
 
+// ───────── автообновление ─────────
+
+/// Проверяет latest.json в GitHub Releases. notify=true — ещё и системное уведомление.
+#[tauri::command]
+async fn check_update(app: AppHandle, notify: bool) -> Result<Value, String> {
+    let current = app.package_info().version.to_string();
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?;
+    let Some(u) = update else {
+        return Ok(json!({ "available": false, "current": current }));
+    };
+    let info = json!({
+        "available": true,
+        "current": current,
+        "version": u.version,
+        "notes": u.body,
+    });
+    if notify {
+        let _ = app
+            .notification()
+            .builder()
+            .title("FACEIT Lite: есть обновление")
+            .body(format!("Версия {} — нажми «Обновить» в панели", u.version))
+            .show();
+    }
+    *app.state::<PendingUpdate>().0.lock().unwrap() = Some(u);
+    Ok(info)
+}
+
+/// Скачивает, проверяет подпись, ставит и перезапускает клиент
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .state::<PendingUpdate>()
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or("Сначала проверь обновления")?;
+    let progress_app = app.clone();
+    let mut got: usize = 0;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                got += chunk;
+                let _ = progress_app.emit_to("stats", "update-progress", json!({ "got": got, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("Обновление не встало: {e}"))?;
+    app.restart();
+}
+
 /// Единственная команда, доступная сайту faceit.com
 #[tauri::command]
 fn page_event(app: AppHandle, kind: String, data: Option<String>) -> Value {
@@ -296,10 +358,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let stats = MenuItem::with_id(app, "stats", "Статистика / лобби", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", "Перечитать тему и конфиг", true, None::<&str>)?;
     let dir = MenuItem::with_id(app, "dir", "Папка настроек", true, None::<&str>)?;
+    let upd = MenuItem::with_id(app, "update", "Проверить обновления", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show, &stats, &sep1, &reload, &dir, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &stats, &sep1, &reload, &dir, &upd, &sep2, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("FACEIT Lite")
@@ -311,6 +374,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "reload" => reload_theme(app.clone(), app.state()),
             "dir" => {
                 let _ = open_config_dir(app.state());
+            }
+            "update" => {
+                show_window(app, "stats");
+                let _ = app.emit_to("stats", "check-update", ());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -363,6 +430,8 @@ fn register_hotkeys(app: &AppHandle) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate(Mutex::new(None)))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -418,7 +487,9 @@ fn main() {
             get_match,
             page_event,
             toggle_site,
-            get_site_visible
+            get_site_visible,
+            check_update,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running FACEIT Lite");

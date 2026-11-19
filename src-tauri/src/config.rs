@@ -66,6 +66,8 @@ pub struct Config {
     /// Режим «сайт в трее»: faceit.com спрятан и почти не рендерится,
     /// главное окно — панель; сайт всплывает только на «матч найден»
     pub tray_mode: bool,
+    /// Проверять обновления при запуске
+    pub auto_update: bool,
     pub start_hidden: bool,
     pub hotkey_toggle_stats: String,
     pub hotkey_toggle_main: String,
@@ -93,6 +95,7 @@ impl Default for Config {
             stats_always_on_top: false,
             close_to_tray: true,
             tray_mode: true,
+            auto_update: true,
             start_hidden: false,
             hotkey_toggle_stats: "CommandOrControl+Shift+F".into(),
             hotkey_toggle_main: "CommandOrControl+Shift+G".into(),

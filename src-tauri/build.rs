@@ -10,6 +10,8 @@ fn main() {
             "page_event",
             "toggle_site",
             "get_site_visible",
+            "check_update",
+            "install_update",
         ]),
     ))
     .expect("failed to run tauri-build");

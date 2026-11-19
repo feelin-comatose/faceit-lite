@@ -43,6 +43,22 @@ npm run build
 
 Без локальной установки можно так: залей репо на GitHub, открой вкладку Actions → **Build Windows** → Run workflow, и exe появится в артефактах.
 
+## Автообновление
+Клиент при запуске проверяет `latest.json` из последнего GitHub Release. Если там новая версия, в панели появляется кнопка «Обновить»: клиент скачает установщик, проверит подпись, поставит обновление и перезапустится. Проверку можно запустить и вручную: трей → «Проверить обновления».
+
+Работает только для **установленной** версии (setup.exe). Portable-exe обновляется вручную.
+
+**Настройка (один раз):** нужен ключ подписи обновлений.
+1. Открой репо → Settings → Secrets and variables → Actions → New repository secret.
+2. Имя `TAURI_SIGNING_PRIVATE_KEY`, значение — содержимое приватного ключа (файл `updater.key`).
+3. Публичная половина ключа уже лежит в `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`. Если генерируешь свою пару (`npx tauri signer generate -w updater.key`), замени и её.
+
+Ключ **не теряй**: без него следующие обновления не встанут у тех, кто уже установил клиент.
+
+**Выпуск версии:**
+1. Подними версию в `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` и `package.json`.
+2. Actions → Build Windows → Run workflow → `release_tag` = `vX.Y.Z` (должен совпадать с версией).
+
 ## Кастомизация
 Настройки лежат в `%APPDATA%\dev.faceitlite.app\` (трей → «Папка настроек»):
 

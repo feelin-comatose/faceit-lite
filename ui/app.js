@@ -397,6 +397,48 @@ setInterval(() => {
 
 invoke("get_site_visible").then((v) => { siteVisible = v; renderStatus(); });
 
+// ───────── обновления ─────────
+async function checkUpdate({ notify = false, manual = false } = {}) {
+  const msg = $("#update-msg");
+  if (manual) msg.textContent = "Проверяю…";
+  try {
+    const r = await invoke("check_update", { notify });
+    if (r.available) {
+      $("#update-text").textContent = `Доступна версия ${r.version} (у тебя ${r.current})`;
+      $("#update-btn").disabled = false;
+      $("#update-btn").textContent = "Обновить";
+      $("#update-banner").hidden = false;
+      msg.textContent = `Есть версия ${r.version}`;
+    } else if (manual) {
+      msg.textContent = `У тебя последняя версия (${r.current}) ✓`;
+    }
+  } catch (e) {
+    if (manual) msg.textContent = String(e);
+  }
+}
+
+$("#update-btn").addEventListener("click", async () => {
+  const btn = $("#update-btn");
+  btn.disabled = true;
+  btn.textContent = "Качаю…";
+  try {
+    await invoke("install_update"); // после установки клиент перезапустится сам
+  } catch (e) {
+    $("#update-text").textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = "Ещё раз";
+  }
+});
+
+listen("update-progress", ({ payload: { got, total } }) => {
+  $("#update-btn").textContent = total ? `${Math.round((got / total) * 100)}%` : `${(got / 1048576).toFixed(1)} МБ`;
+});
+listen("check-update", () => {
+  showTab("settings");
+  checkUpdate({ manual: true });
+});
+$("#check-update").addEventListener("click", () => checkUpdate({ manual: true }));
+
 // ───────── события ─────────
 listen("config-changed", () => loadConfig());
 listen("room-detected", (e) => {
@@ -406,6 +448,7 @@ listen("room-detected", (e) => {
 });
 
 loadConfig().then((cfg) => {
+  if (cfg.auto_update) setTimeout(() => checkUpdate({ notify: true }), 3000);
   if (!cfg.api_key) showTab("settings");
   else if (cfg.nickname) loadProfile(cfg.nickname);
 });
