@@ -1,0 +1,123 @@
+:root {
+  --accent: #ff5a1f;
+  --bg: #0f1013;
+  --panel: #181a1f;
+  --text: #e8e8ea;
+  --muted: #8b8f98;
+  --good: #3ddc84;
+  --bad: #ff4d5e;
+  --radius: 8px;
+  --font: Inter, "Segoe UI", system-ui, sans-serif;
+  --line: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+main { flex: 1; overflow-y: auto; padding: 12px; }
+
+.tabs { display: flex; gap: 2px; padding: 6px 6px 0; background: var(--panel); border-bottom: 1px solid var(--line); }
+.tabs button {
+  flex: 1; background: none; border: 0; color: var(--muted); padding: 9px 6px;
+  font: 600 12px var(--font); text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 2px solid transparent; cursor: pointer;
+}
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab { display: none; }
+.tab.active { display: block; }
+
+input, textarea, select, button { font: inherit; color: inherit; }
+input, textarea {
+  width: 100%; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 7px 9px; outline: none;
+}
+input:focus, textarea:focus { border-color: var(--accent); }
+input[type=color] { padding: 2px; height: 30px; cursor: pointer; }
+input[type=checkbox] { width: auto; accent-color: var(--accent); }
+button {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 7px 12px; cursor: pointer; white-space: nowrap;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+.row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+.center { text-align: center; padding: 24px 0; }
+.err { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); padding: 10px; border-radius: var(--radius); }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+
+.card { background: var(--panel); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.card h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+/* профиль */
+.player { display: flex; gap: 12px; align-items: center; }
+.player img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: var(--bg); }
+.player .name { font-size: 18px; font-weight: 700; }
+.lvl {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  font-weight: 800; font-size: 13px; border: 2px solid currentColor; flex: none;
+}
+.lvl.sm { width: 22px; height: 22px; font-size: 11px; }
+.lvl-1 { color: #eee; } .lvl-2, .lvl-3 { color: #1ce400; }
+.lvl-4, .lvl-5, .lvl-6, .lvl-7 { color: #ffc800; }
+.lvl-8, .lvl-9 { color: #ff6309; } .lvl-10 { color: #fe1f00; }
+.elo { font-size: 22px; font-weight: 800; }
+.progress { height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.progress > i { display: block; height: 100%; background: var(--accent); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.kpi b { display: block; font-size: 16px; }
+.kpi span { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+
+.streak { display: flex; gap: 3px; margin-top: 8px; }
+.streak i { width: 14px; height: 14px; border-radius: 3px; font: 700 9px/14px var(--font); text-align: center; font-style: normal; color: #000; }
+.streak .w { background: var(--good); } .streak .l { background: var(--bad); }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 4px; }
+td { padding: 5px 4px; border-top: 1px solid var(--line); }
+td.num, th.num { text-align: right; }
+.match-row.win td:first-child { box-shadow: inset 3px 0 var(--good); }
+.match-row.loss td:first-child { box-shadow: inset 3px 0 var(--bad); }
+.match-row td:first-child { padding-left: 8px; }
+
+/* лобби */
+.teams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.team h4 { display: flex; justify-content: space-between; }
+.team.mine h4 { color: var(--accent); }
+.pl { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.pl .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pl .me { color: var(--accent); }
+.pl .s { font-size: 10px; color: var(--muted); }
+.map-row.pick td:first-child { box-shadow: inset 3px 0 var(--good); }
+.map-row.ban td:first-child { box-shadow: inset 3px 0 var(--bad); }
+.map-row td:first-child { padding-left: 8px; }
+.tag { font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
+.tag.pick { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+.tag.ban { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+
+/* настройки */
+.settings h3 { margin: 18px 0 8px; font-size: 12px; text-transform: uppercase; color: var(--accent); letter-spacing: .06em; }
+.settings h3:first-child { margin-top: 0; }
+.settings label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.settings label input, .settings label textarea { margin-top: 3px; color: var(--text); }
+.settings label.check { display: flex; gap: 8px; align-items: center; color: var(--text); }
+.settings .hint { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 8px; }
+.sticky { position: sticky; bottom: -12px; background: var(--bg); padding: 10px 0; margin: 0; }
+
+.loader { height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 200% 100%; animation: ld 1s linear infinite; }
+@keyframes ld { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }

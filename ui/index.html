@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FACEIT Lite</title>
+  <link rel="stylesheet" href="style.css" />
+  <style id="theme-vars"></style>
+  <style id="user-css"></style>
+</head>
+<body>
+  <nav class="tabs">
+    <button data-tab="profile" class="active">Профиль</button>
+    <button data-tab="lobby">Лобби</button>
+    <button data-tab="settings">Настройки</button>
+  </nav>
+
+  <main>
+    <!-- ПРОФИЛЬ -->
+    <section id="tab-profile" class="tab active">
+      <form id="profile-form" class="row">
+        <input id="nick" placeholder="Ник на FACEIT" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="primary">Найти</button>
+      </form>
+      <div id="profile-out"><p class="muted center">Введи ник или задай свой в настройках</p></div>
+    </section>
+
+    <!-- ЛОББИ -->
+    <section id="tab-lobby" class="tab">
+      <form id="lobby-form" class="row">
+        <input id="match-id" placeholder="ID матча или ссылка на комнату" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="primary">Разобрать</button>
+      </form>
+      <p class="muted small">Зайди в комнату матча на faceit.com, и лобби подтянется само.</p>
+      <div id="lobby-out"></div>
+    </section>
+
+    <!-- НАСТРОЙКИ -->
+    <section id="tab-settings" class="tab">
+      <form id="settings-form" class="settings">
+        <h3>Аккаунт</h3>
+        <label>API-ключ (Server-side)
+          <input name="api_key" type="password" autocomplete="off" spellcheck="false" />
+          <span class="hint">developers.faceit.com → App Studio → API Keys</span>
+        </label>
+        <label>Мой ник <input name="nickname" spellcheck="false" /></label>
+
+        <h3>Тема панели</h3>
+        <div class="grid3">
+          <label>Акцент <input name="theme.accent" type="color" /></label>
+          <label>Фон <input name="theme.bg" type="color" /></label>
+          <label>Карточки <input name="theme.panel" type="color" /></label>
+          <label>Текст <input name="theme.text" type="color" /></label>
+          <label>Вторичный <input name="theme.muted" type="color" /></label>
+          <label>Победа <input name="theme.good" type="color" /></label>
+          <label>Поражение <input name="theme.bad" type="color" /></label>
+          <label>Скругление <input name="theme.radius" type="number" min="0" max="24" /></label>
+          <label>Прозрачность <input name="theme.panel_opacity" type="number" min="0.3" max="1" step="0.05" /></label>
+        </div>
+        <label>Шрифт <input name="theme.font" spellcheck="false" /></label>
+
+        <h3>faceit.com</h3>
+        <label>Фон страницы (пусто — не трогать) <input name="theme.page_bg" spellcheck="false" placeholder="#0b0b0e" /></label>
+        <label>Шрифт страницы (пусто — не трогать) <input name="theme.page_font" spellcheck="false" /></label>
+        <label>Масштаб <input name="zoom" type="number" min="0.5" max="2" step="0.05" /></label>
+        <label>Скрыть элементы (CSS-селекторы, по одному на строку)
+          <textarea name="hide_selectors" rows="3" spellcheck="false"></textarea>
+        </label>
+        <label>Стартовая страница <input name="start_url" spellcheck="false" /></label>
+        <label class="check"><input name="low_power" type="checkbox" /> Экономия: без анимаций и видео</label>
+
+        <h3>Матч найден</h3>
+        <label class="check"><input name="notify_on_match" type="checkbox" /> Системное уведомление</label>
+        <label class="check"><input name="focus_on_match" type="checkbox" /> Вытащить окно на передний план</label>
+        <label class="check"><input name="sound_on_match" type="checkbox" /> Звук</label>
+        <label>Текст кнопки (RegExp) <input name="match_found_regex" spellcheck="false" /></label>
+        <label class="check"><input name="auto_open_lobby" type="checkbox" /> Открывать разбор лобби при входе в комнату</label>
+
+        <h3>Окна и хоткеи</h3>
+        <label class="check"><input name="stats_always_on_top" type="checkbox" /> Статистика поверх всех окон</label>
+        <label class="check"><input name="close_to_tray" type="checkbox" /> Крестик сворачивает в трей</label>
+        <label class="check"><input name="start_hidden" type="checkbox" /> Стартовать свёрнутым в трей</label>
+        <label>Показать/скрыть статистику <input name="hotkey_toggle_stats" spellcheck="false" /></label>
+        <label>Показать/скрыть FACEIT <input name="hotkey_toggle_main" spellcheck="false" /></label>
+        <label class="check"><input name="devtools" type="checkbox" /> DevTools (ПКМ → Inspect)</label>
+        <label>Аргументы WebView2 <input name="webview_args" spellcheck="false" placeholder="--disable-gpu" /></label>
+        <p class="hint">Хоткеи, DevTools, стартовая страница и аргументы WebView2 применяются после перезапуска.</p>
+
+        <div class="row sticky">
+          <button type="submit" class="primary">Сохранить</button>
+          <button type="button" id="open-dir">Папка с CSS</button>
+          <button type="button" id="reload">Перечитать</button>
+        </div>
+        <p id="settings-msg" class="small muted"></p>
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panel",
+  "description": "Локальная панель статистики: полный доступ к командам приложения",
+  "windows": ["stats"],
+  "permissions": [
+    "core:default",
+    "allow-get-config",
+    "allow-save-config",
+    "allow-reload-theme",
+    "allow-open-config-dir",
+    "allow-get-player",
+    "allow-get-match"
+  ]
+}

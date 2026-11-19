@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "faceit-remote",
+  "description": "Сайт faceit.com может вызвать ТОЛЬКО page_event (матч найден / комната / ready). Никакого доступа к ФС, ключу API и т.п.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://*.faceit.com", "https://faceit.com"]
+  },
+  "permissions": ["allow-page-event"]
+}
