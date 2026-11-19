@@ -44,6 +44,11 @@ impl Faceit {
         let detail = serde_json::from_str::<Value>(&body)
             .ok()
             .and_then(|v| v["errors"][0]["message"].as_str().map(String::from))
+            .or_else(|| {
+                // нет привычного JSON — покажем кусок сырого ответа (кроме HTML-страниц)
+                let t = body.trim();
+                (!t.is_empty() && !t.starts_with('<')).then(|| t.chars().take(200).collect())
+            })
             .map(|m| format!(" — {m}"))
             .unwrap_or_default();
         Err(match status {

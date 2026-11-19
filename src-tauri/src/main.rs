@@ -159,9 +159,10 @@ fn on_match_found(app: &AppHandle) {
 // ───────────── команды ─────────────
 
 #[tauri::command]
-fn get_config(state: State<AppState>) -> Value {
+fn get_config(app: AppHandle, state: State<AppState>) -> Value {
     let c = state.cfg.lock().unwrap().clone();
     json!({
+        "version": app.package_info().version.to_string(),
         "config": c,
         "panel_css": state.paths.panel_css(),
         "dir": state.paths.dir.display().to_string(),

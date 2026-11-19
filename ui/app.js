@@ -19,6 +19,8 @@ const pick = (o, ...keys) => {
 };
 
 let CONFIG = {};
+let VERSION = "?";
+const KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ───────── тема ─────────
 function applyTheme(cfg, panelCss) {
@@ -33,8 +35,10 @@ function applyTheme(cfg, panelCss) {
 }
 
 async function loadConfig() {
-  const { config, panel_css } = await invoke("get_config");
+  const { config, panel_css, version } = await invoke("get_config");
   CONFIG = config;
+  VERSION = version || "?";
+  $("#app-version").textContent = `Версия ${VERSION}`;
   applyTheme(config, panel_css);
   fillSettings(config);
   if (!$("#nick").value && config.nickname) $("#nick").value = config.nickname;
@@ -49,7 +53,13 @@ function showTab(name) {
 $$(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
 const loading = (el) => (el.innerHTML = '<div class="loader"></div>');
-const error = (el, e) => (el.innerHTML = `<div class="err">${esc(e)}</div>`);
+const error = (el, e) => {
+  let hint = "";
+  if (!CONFIG.api_key) hint = "Вставь API-ключ во вкладке «Настройки».";
+  else if (!KEY_RE.test(CONFIG.api_key.trim()))
+    hint = "Ключ не похож на ключ FACEIT (должен быть вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Проверь в «Настройках».";
+  el.innerHTML = `<div class="err">${esc(e)}${hint ? `<br><br>${esc(hint)}` : ""}<div class="small muted" style="margin-top:6px">FACEIT Lite ${esc(VERSION)}</div></div>`;
+};
 
 // ───────── уровни ─────────
 const LEVELS = [0, 100, 501, 751, 901, 1051, 1201, 1351, 1531, 1751, 2001];
@@ -344,13 +354,16 @@ $("#settings-form").addEventListener("submit", async (e) => {
     setPath(cfg, el.name, v);
   }
   const msg = $("#settings-msg");
+  cfg.api_key = (cfg.api_key || "").trim();
   try {
     await invoke("save_config", { config: cfg });
-    msg.textContent = "Сохранено ✓";
+    msg.textContent = cfg.api_key && !KEY_RE.test(cfg.api_key)
+      ? "Сохранено, но ключ не похож на ключ FACEIT (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+      : "Сохранено ✓";
   } catch (err) {
     msg.textContent = "Ошибка: " + err;
   }
-  setTimeout(() => (msg.textContent = ""), 2500);
+  setTimeout(() => (msg.textContent = ""), 6000);
 });
 
 $("#open-dir").addEventListener("click", () => invoke("open_config_dir").catch(alert));
