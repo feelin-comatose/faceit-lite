@@ -1029,6 +1029,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-notification",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]

@@ -10,6 +10,8 @@
     "allow-reload-theme",
     "allow-open-config-dir",
     "allow-get-player",
-    "allow-get-match"
+    "allow-get-match",
+    "allow-toggle-site",
+    "allow-get-site-visible"
   ]
 }

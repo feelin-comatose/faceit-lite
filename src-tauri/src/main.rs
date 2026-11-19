@@ -45,11 +45,67 @@ fn inject_script(app: &AppHandle) -> String {
     format!("window.__FL_INIT__ = {};\n{}", page_payload(app), INJECT_JS)
 }
 
+/// Сайт спрятан → WebView2 считает себя невидимым (не рисует, троттлит таймеры)
+/// и держит минимум памяти. JS при этом работает — алерт о матче не ломается.
+#[cfg(target_os = "windows")]
+fn set_site_active(app: &AppHandle, active: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.with_webview(move |wv| unsafe {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW,
+                COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+            };
+            use windows_core::Interface;
+            let controller = wv.controller();
+            let _ = controller.SetIsVisible(active);
+            if let Ok(core) = controller.CoreWebView2() {
+                if let Ok(core19) = core.cast::<ICoreWebView2_19>() {
+                    let level = if active {
+                        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                    } else {
+                        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+                    };
+                    let _ = core19.SetMemoryUsageTargetLevel(level);
+                }
+            }
+        });
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_site_active(_app: &AppHandle, _active: bool) {}
+
+fn site_visible(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        .unwrap_or(false)
+}
+
+fn notify_site_status(app: &AppHandle) {
+    let _ = app.emit_to("stats", "site-status", json!({ "kind": "visibility", "visible": site_visible(app) }));
+}
+
 fn show_window(app: &AppHandle, label: &str) {
     if let Some(w) = app.get_webview_window(label) {
+        if label == "main" {
+            set_site_active(app, true);
+        }
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        if label == "main" {
+            notify_site_status(app);
+        }
+    }
+}
+
+fn hide_window(app: &AppHandle, label: &str) {
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = w.hide();
+        if label == "main" {
+            set_site_active(app, false);
+            notify_site_status(app);
+        }
     }
 }
 
@@ -57,7 +113,7 @@ fn toggle_window(app: &AppHandle, label: &str) {
     if let Some(w) = app.get_webview_window(label) {
         let visible = w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false);
         if visible {
-            let _ = w.hide();
+            hide_window(app, label);
         } else {
             show_window(app, label);
         }
@@ -79,6 +135,7 @@ fn apply_theme(app: &AppHandle) {
 
 fn on_match_found(app: &AppHandle) {
     let c = cfg(app);
+    let _ = app.emit_to("stats", "site-status", json!({ "kind": "match_found" }));
     if c.focus_on_match {
         show_window(app, "main");
         if let Some(w) = app.get_webview_window("main") {
@@ -105,6 +162,18 @@ fn get_config(state: State<AppState>) -> Value {
         "panel_css": state.paths.panel_css(),
         "dir": state.paths.dir.display().to_string(),
     })
+}
+
+/// Показать/спрятать сайт из панели. Возвращает новую видимость.
+#[tauri::command]
+fn toggle_site(app: AppHandle) -> bool {
+    toggle_window(&app, "main");
+    site_visible(&app)
+}
+
+#[tauri::command]
+fn get_site_visible(app: AppHandle) -> bool {
+    site_visible(&app)
 }
 
 #[tauri::command]
@@ -166,7 +235,8 @@ fn page_event(app: AppHandle, kind: String, data: Option<String>) -> Value {
         }
         "room" => {
             if let Some(id) = data.filter(|d| api::valid_match_id(d)) {
-                let _ = app.emit_to("stats", "room-detected", id);
+                let _ = app.emit_to("stats", "room-detected", id.clone());
+                let _ = app.emit_to("stats", "site-status", json!({ "kind": "room", "id": id }));
                 if cfg(&app).auto_open_lobby {
                     if let Some(w) = app.get_webview_window("stats") {
                         let _ = w.show();
@@ -196,7 +266,7 @@ fn build_windows(app: &AppHandle) -> tauri::Result<()> {
         .title("FACEIT Lite")
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
-        .visible(!c.start_hidden)
+        .visible(!c.start_hidden && !c.tray_mode)
         .devtools(c.devtools)
         .initialization_script(&inject_script(app));
     #[cfg(target_os = "windows")]
@@ -205,14 +275,17 @@ fn build_windows(app: &AppHandle) -> tauri::Result<()> {
     }
     let main = main.build()?;
     let _ = main.set_zoom(c.zoom.clamp(0.5, 2.0));
+    if c.start_hidden || c.tray_mode {
+        set_site_active(app, false);
+    }
 
     WebviewWindowBuilder::new(app, "stats", WebviewUrl::App("index.html".into()))
         .title("FACEIT Lite — статистика")
-        .inner_size(460.0, 760.0)
+        .inner_size(480.0, 800.0)
         .min_inner_size(360.0, 400.0)
         .always_on_top(c.stats_always_on_top)
         .devtools(c.devtools)
-        .visible(false)
+        .visible(c.tray_mode && !c.start_hidden)
         .build()?;
 
     Ok(())
@@ -249,7 +322,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = e
             {
-                toggle_window(tray.app_handle(), "main");
+                let app = tray.app_handle();
+                let label = if cfg(app).tray_mode { "stats" } else { "main" };
+                toggle_window(app, label);
             }
         });
     if let Some(icon) = app.default_window_icon() {
@@ -328,7 +403,7 @@ fn main() {
                 // Окно статистики всегда просто прячется; главное — по настройке
                 if window.label() == "stats" || cfg(app).close_to_tray {
                     api.prevent_close();
-                    let _ = window.hide();
+                    hide_window(app, window.label());
                 } else {
                     app.exit(0);
                 }
@@ -341,7 +416,9 @@ fn main() {
             open_config_dir,
             get_player,
             get_match,
-            page_event
+            page_event,
+            toggle_site,
+            get_site_visible
         ])
         .run(tauri::generate_context!())
         .expect("error while running FACEIT Lite");

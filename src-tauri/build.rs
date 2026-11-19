@@ -8,6 +8,8 @@ fn main() {
             "get_player",
             "get_match",
             "page_event",
+            "toggle_site",
+            "get_site_visible",
         ]),
     ))
     .expect("failed to run tauri-build");

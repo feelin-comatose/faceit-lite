@@ -356,6 +356,47 @@ $("#settings-form").addEventListener("submit", async (e) => {
 $("#open-dir").addEventListener("click", () => invoke("open_config_dir").catch(alert));
 $("#reload").addEventListener("click", () => invoke("reload_theme"));
 
+// ───────── статус сайта ─────────
+const time = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+let siteVisible = false;
+let lastEvent = null; // { cls, text } — последний значимый статус (матч / комната)
+
+function renderStatus() {
+  const st = $("#status");
+  const ev = lastEvent || (siteVisible
+    ? { cls: "open", text: "FACEIT открыт" }
+    : { cls: "", text: "FACEIT в трее · спит" });
+  st.className = "status " + ev.cls;
+  $("span", st).textContent = ev.text;
+  const btn = $("#toggle-site");
+  btn.textContent = siteVisible ? "Спрятать FACEIT" : "Открыть FACEIT";
+  btn.classList.toggle("on", siteVisible);
+}
+
+$("#toggle-site").addEventListener("click", async () => {
+  siteVisible = await invoke("toggle_site");
+  renderStatus();
+});
+
+listen("site-status", ({ payload: p }) => {
+  if (p.kind === "visibility") siteVisible = p.visible;
+  else if (p.kind === "match_found") lastEvent = { cls: "found", text: `МАТЧ НАЙДЕН · ${time()} · жми Accept` };
+  else if (p.kind === "room") lastEvent = { cls: "room", text: `В комнате матча · ${time()}` };
+  renderStatus();
+});
+
+// «матч найден» гаснет через 2 минуты, комната — через 90 минут
+setInterval(() => {
+  if (!lastEvent) return;
+  lastEvent.age = (lastEvent.age || 0) + 1;
+  if ((lastEvent.cls === "found" && lastEvent.age >= 2) || lastEvent.age >= 90) {
+    lastEvent = null;
+    renderStatus();
+  }
+}, 60000);
+
+invoke("get_site_visible").then((v) => { siteVisible = v; renderStatus(); });
+
 // ───────── события ─────────
 listen("config-changed", () => loadConfig());
 listen("room-detected", (e) => {

@@ -23,3 +23,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Прямой доступ к WebView2: прятать сайт «по-настоящему» (невидим + мало RAM)
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"

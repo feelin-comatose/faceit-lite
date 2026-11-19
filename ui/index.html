@@ -9,6 +9,10 @@
   <style id="user-css"></style>
 </head>
 <body>
+  <header class="topbar">
+    <span id="status" class="status"><i></i><span>FACEIT в трее</span></span>
+    <button id="toggle-site" title="Показать/спрятать сайт FACEIT">Открыть FACEIT</button>
+  </header>
   <nav class="tabs">
     <button data-tab="profile" class="active">Профиль</button>
     <button data-tab="lobby">Лобби</button>
@@ -78,13 +82,14 @@
 
         <h3>Окна и хоткеи</h3>
         <label class="check"><input name="stats_always_on_top" type="checkbox" /> Статистика поверх всех окон</label>
+        <label class="check"><input name="tray_mode" type="checkbox" /> Режим «сайт в трее»: главное окно — эта панель, сайт спит и всплывает на «матч найден»</label>
         <label class="check"><input name="close_to_tray" type="checkbox" /> Крестик сворачивает в трей</label>
         <label class="check"><input name="start_hidden" type="checkbox" /> Стартовать свёрнутым в трей</label>
         <label>Показать/скрыть статистику <input name="hotkey_toggle_stats" spellcheck="false" /></label>
         <label>Показать/скрыть FACEIT <input name="hotkey_toggle_main" spellcheck="false" /></label>
         <label class="check"><input name="devtools" type="checkbox" /> DevTools (ПКМ → Inspect)</label>
         <label>Аргументы WebView2 <input name="webview_args" spellcheck="false" placeholder="--disable-gpu" /></label>
-        <p class="hint">Хоткеи, DevTools, стартовая страница и аргументы WebView2 применяются после перезапуска.</p>
+        <p class="hint">Режим «сайт в трее», хоткеи, DevTools, стартовая страница и аргументы WebView2 применяются после перезапуска.</p>
 
         <div class="row sticky">
           <button type="submit" class="primary">Сохранить</button>
